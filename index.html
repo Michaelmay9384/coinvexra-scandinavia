@@ -1551,33 +1551,72 @@ document.getElementById('claimForm').addEventListener('submit',async function(e)
     timestamp:  new Date().toISOString()
   };
 
-  // Send lead to API — use XMLHttpRequest for maximum browser compatibility
-  await new Promise((resolve) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', 'https://coinvexra.com/api/leads', true);
-    xhr.setRequestHeader('Authorization', 'Bearer cvx_ed3a6f09ce46442194a592d313fd7b20');
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.onreadystatechange = function() {
-      if (xhr.readyState === 4) {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          console.log('Lead submitted successfully:', xhr.responseText);
-        } else {
-          console.warn('API error:', xhr.status, xhr.responseText);
+  // Send lead to API via CORS proxy
+  const API_URL = 'https://9090-icm4wi5cxc0xalyldvjxb-975f47a5.us2.manus.computer/leads';
+  const API_TOKEN = 'Bearer cvx_ed3a6f09ce46442194a592d313fd7b20';
+  const bodyStr = JSON.stringify(payload);
+
+  let sent = false;
+
+  // Method 1: fetch with CORS
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': API_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: bodyStr
+    });
+    if (res.ok) {
+      const data = await res.json();
+      console.log('Lead submitted (fetch):', data);
+      sent = true;
+    } else {
+      console.warn('Fetch non-OK:', res.status);
+    }
+  } catch(e) {
+    console.warn('Fetch CORS blocked, trying XHR no-cors:', e.message);
+  }
+
+  // Method 2: XMLHttpRequest fallback
+  if (!sent) {
+    await new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', API_URL, true);
+      xhr.setRequestHeader('Authorization', API_TOKEN);
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.withCredentials = false;
+      xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            console.log('Lead submitted (XHR):', xhr.responseText);
+            sent = true;
+          } else {
+            console.warn('XHR error:', xhr.status);
+          }
+          resolve();
         }
-        resolve();
-      }
-    };
-    xhr.onerror = function() {
-      console.warn('Network error — lead could not be sent');
-      resolve();
-    };
-    xhr.timeout = 10000;
-    xhr.ontimeout = function() {
-      console.warn('API timeout');
-      resolve();
-    };
-    xhr.send(JSON.stringify(payload));
-  });
+      };
+      xhr.onerror = function() { console.warn('XHR network error'); resolve(); };
+      xhr.timeout = 10000;
+      xhr.ontimeout = function() { console.warn('XHR timeout'); resolve(); };
+      xhr.send(bodyStr);
+    });
+  }
+
+  // Method 3: sendBeacon as last resort (no-cors, fire-and-forget)
+  if (!sent) {
+    try {
+      const blob = new Blob([bodyStr], {type: 'application/json'});
+      navigator.sendBeacon(API_URL + '?token=cvx_ed3a6f09ce46442194a592d313fd7b20', blob);
+      console.log('Lead sent via sendBeacon');
+    } catch(e) {
+      console.warn('sendBeacon failed:', e);
+    }
+  }
+
+  console.log('API submission complete. Sent:', sent);
 
   // Mark as submitted in localStorage
   localStorage.setItem(LS_SUBMITTED, 'true');
